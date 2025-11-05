@@ -1,8 +1,10 @@
 [package]
 name = "sensitive_url"
 version = "0.1.0"
-edition = "2024"
+description = "Automatically redact sensitive information from URLs."
+documentation = "https://docs.rs/sensitive_url"
 authors = ["Sigma Prime <contact@sigmaprime.io>"]
+edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
 repository = "https://github.com/sigp/sensitive_url"
