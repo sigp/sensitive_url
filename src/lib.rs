@@ -120,6 +120,13 @@ impl SensitiveUrl {
 
     /// Creates a `SensitiveUrl` from an existing `Url`.
     pub fn new(full: Url) -> Result<Self, Error> {
+        // IPC URLs don't have credentials to redact
+        if full.scheme() == "ipc" {
+            return Ok(Self {
+                redacted: full.to_string(),
+                full,
+            });
+        }
         let mut redacted = full.clone();
         redacted
             .path_segments_mut()
@@ -201,6 +208,13 @@ mod tests {
             debug,
             "SensitiveUrl { redacted: \"https://example.com/\", .. }"
         );
+    }
+
+    #[test]
+    fn test_ipc_support() {
+        let full = "ipc:///path/to/socket";
+        let surl = SensitiveUrl::parse(full);
+        assert!(surl.is_ok());
     }
 
     #[cfg(feature = "serde")]
