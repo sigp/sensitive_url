@@ -282,6 +282,30 @@ mod tests {
         assert_eq!(surl.expose_full().to_string(), full);
     }
 
+    #[test]
+    fn test_unix_socket_url() {
+        let full = "unix:///tmp/my_app/server.sock";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), full);
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn redact_ssh_url() {
+        let full = "ssh://user:pass@git.example.com:2222/org/repo.git";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), "ssh://git.example.com:2222/");
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn redact_ssh_url_no_credentials() {
+        let full = "ssh://example.com/repo.git";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), "ssh://example.com/");
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
     #[cfg(feature = "serde")]
     mod serde_tests {
         use super::*;
