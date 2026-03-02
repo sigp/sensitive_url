@@ -119,22 +119,32 @@ impl SensitiveUrl {
     }
 
     /// Creates a `SensitiveUrl` from an existing `Url`.
+    ///
+    /// For URLs with a host, the path, query parameters, username and password are
+    /// stripped from the redacted representation, leaving the scheme, host and port.
+    ///
+    /// For URLs without a host (for example: `ipc:///path/to/socket`, `file:///etc/config`)
+    /// are returned without redaction since they are uncredentialed.
     pub fn new(full: Url) -> Result<Self, Error> {
+        if !full.has_host() {
+            return Ok(Self {
+                redacted: full.to_string(),
+                full,
+            });
+        }
+
         let mut redacted = full.clone();
         redacted
             .path_segments_mut()
             .map_err(|_| Error::InvalidUrl("URL cannot be a base.".to_string()))?
             .clear();
         redacted.set_query(None);
-
-        if redacted.has_authority() {
-            redacted
-                .set_username("")
-                .map_err(|_| Error::RedactError("Unable to redact username.".to_string()))?;
-            redacted
-                .set_password(None)
-                .map_err(|_| Error::RedactError("Unable to redact password.".to_string()))?;
-        }
+        redacted
+            .set_username("")
+            .map_err(|_| Error::RedactError("Unable to redact username.".to_string()))?;
+        redacted
+            .set_password(None)
+            .map_err(|_| Error::RedactError("Unable to redact password.".to_string()))?;
 
         Ok(Self {
             full,
@@ -201,6 +211,99 @@ mod tests {
             debug,
             "SensitiveUrl { redacted: \"https://example.com/\", .. }"
         );
+    }
+
+    #[test]
+    fn test_ipc_url() {
+        let full = "ipc:///path/to/socket";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), full);
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn test_ipc_url_debug() {
+        let full = "ipc:///path/to/socket";
+        let surl = SensitiveUrl::parse(full).unwrap();
+
+        let debug = format!("{:?}", surl);
+
+        assert_eq!(
+            debug,
+            "SensitiveUrl { redacted: \"ipc:///path/to/socket\", .. }"
+        );
+    }
+
+    #[test]
+    fn test_data_url() {
+        let full = "data:text/plain;base64,SGVsbG8=";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), full);
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn test_mailto_url() {
+        let full = "mailto:user@example.com";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), full);
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn test_file_url_with_path() {
+        let full = "file:///etc/config";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), full);
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn redact_ftp_url() {
+        let full = "ftp://user:pass@ftp.example.com/files";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), "ftp://ftp.example.com/");
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn redact_websocket_url() {
+        let full = "ws://user:pass@localhost:8546/";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), "ws://localhost:8546/");
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn redact_postgres_url() {
+        let full = "postgres://user:pass@db.example.com:5432/mydb?sslmode=require";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), "postgres://db.example.com:5432/");
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn test_unix_socket_url() {
+        let full = "unix:///tmp/my_app/server.sock";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), full);
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn redact_ssh_url() {
+        let full = "ssh://user:pass@git.example.com:2222/org/repo.git";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), "ssh://git.example.com:2222/");
+        assert_eq!(surl.expose_full().to_string(), full);
+    }
+
+    #[test]
+    fn redact_ssh_url_no_credentials() {
+        let full = "ssh://example.com/repo.git";
+        let surl = SensitiveUrl::parse(full).unwrap();
+        assert_eq!(surl.to_string(), "ssh://example.com/");
+        assert_eq!(surl.expose_full().to_string(), full);
     }
 
     #[cfg(feature = "serde")]
