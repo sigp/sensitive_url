@@ -6,21 +6,21 @@ use url::Url;
 
 /// Errors that can occur when creating or parsing a `SensitiveUrl`.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
-    /// The URL cannot be used as a base URL.
-    InvalidUrl(String),
     /// Failed to parse the URL string.
-    ParseError(url::ParseError),
+    Parse(url::ParseError),
     /// Failed to redact sensitive information from the URL.
-    RedactError(String),
+    /// In theory, this variant should be unreachable since we check for a
+    /// host pattern before redacting.
+    Redact,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::InvalidUrl(msg) => write!(f, "Invalid URL: {}", msg),
-            Error::ParseError(e) => write!(f, "Parse error: {}", e),
-            Error::RedactError(msg) => write!(f, "Redact error: {}", msg),
+            Error::Parse(e) => write!(f, "URL parse error: {}", e),
+            Error::Redact => write!(f, "failed to redact sensitive information from URL"),
         }
     }
 }
@@ -28,9 +28,15 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
-            Error::ParseError(e) => Some(e),
-            _ => None,
+            Error::Parse(e) => Some(e),
+            Error::Redact => None,
         }
+    }
+}
+
+impl From<url::ParseError> for Error {
+    fn from(e: url::ParseError) -> Self {
+        Error::Parse(e)
     }
 }
 
@@ -81,28 +87,6 @@ impl fmt::Debug for SensitiveUrl {
     }
 }
 
-#[cfg(feature = "serde")]
-impl Serialize for SensitiveUrl {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.full.as_ref())
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de> Deserialize<'de> for SensitiveUrl {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s: String = Deserialize::deserialize(deserializer)?;
-        SensitiveUrl::parse(&s)
-            .map_err(|e| de::Error::custom(format!("Failed to deserialize sensitive URL {:?}", e)))
-    }
-}
-
 impl FromStr for SensitiveUrl {
     type Err = Error;
 
@@ -114,7 +98,7 @@ impl FromStr for SensitiveUrl {
 impl SensitiveUrl {
     /// Attempts to parse a `&str` into a `SensitiveUrl`.
     pub fn parse(url: &str) -> Result<Self, Error> {
-        let surl = Url::parse(url).map_err(Error::ParseError)?;
+        let surl = Url::parse(url)?;
         SensitiveUrl::new(surl)
     }
 
@@ -136,16 +120,12 @@ impl SensitiveUrl {
         let mut redacted = full.clone();
         redacted
             .path_segments_mut()
-            .map_err(|_| Error::InvalidUrl("URL cannot be a base.".to_string()))?
+            .map_err(|_| Error::Redact)?
             .clear();
         redacted.set_query(None);
         redacted.set_fragment(None);
-        redacted
-            .set_username("")
-            .map_err(|_| Error::RedactError("Unable to redact username.".to_string()))?;
-        redacted
-            .set_password(None)
-            .map_err(|_| Error::RedactError("Unable to redact password.".to_string()))?;
+        redacted.set_username("").map_err(|_| Error::Redact)?;
+        redacted.set_password(None).map_err(|_| Error::Redact)?;
 
         Ok(Self {
             full,
@@ -161,6 +141,28 @@ impl SensitiveUrl {
     /// Returns the redacted URL as a `&str`.
     pub fn redacted(&self) -> &str {
         &self.redacted
+    }
+}
+
+#[cfg(feature = "serde")]
+impl Serialize for SensitiveUrl {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(self.full.as_ref())
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for SensitiveUrl {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
+        SensitiveUrl::parse(&s)
+            .map_err(|e| de::Error::custom(format!("Failed to deserialize sensitive URL {:?}", e)))
     }
 }
 
