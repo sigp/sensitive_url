@@ -139,6 +139,7 @@ impl SensitiveUrl {
             .map_err(|_| Error::InvalidUrl("URL cannot be a base.".to_string()))?
             .clear();
         redacted.set_query(None);
+        redacted.set_fragment(None);
         redacted
             .set_username("")
             .map_err(|_| Error::RedactError("Unable to redact username.".to_string()))?;
@@ -169,7 +170,7 @@ mod tests {
 
     #[test]
     fn redact_remote_url() {
-        let full = "https://user:pass@example.com/example?somequery";
+        let full = "https://user:pass@example.com/example?somequery#fragment";
         let surl = SensitiveUrl::parse(full).unwrap();
         assert_eq!(surl.to_string(), "https://example.com/");
         assert_eq!(surl.expose_full().to_string(), full);
@@ -276,7 +277,7 @@ mod tests {
 
     #[test]
     fn redact_postgres_url() {
-        let full = "postgres://user:pass@db.example.com:5432/mydb?sslmode=require";
+        let full = "postgres://user:pass@db.example.com:5432/mydb?sslmode=require#fragment";
         let surl = SensitiveUrl::parse(full).unwrap();
         assert_eq!(surl.to_string(), "postgres://db.example.com:5432/");
         assert_eq!(surl.expose_full().to_string(), full);
